@@ -1,0 +1,313 @@
+QA-Automation/                           # Root directory
+│
+├── 📁 backend/                          # Node.js/Express API Server
+│   ├── 📁 src/
+│   │   ├── 📁 config/
+│   │   │   ├── index.ts                 # Environment configuration
+│   │   │   ├── constants.ts             # App constants (crawl limits, etc.)
+│   │   │   └── database.ts              # PostgreSQL connection pool
+│   │   │
+│   │   ├── 📁 middleware/
+│   │   │   ├── auth.ts                  # JWT authentication
+│   │   │   └── errorHandler.ts          # Global error handling
+│   │   │
+│   │   ├── 📁 routes/
+│   │   │   ├── auth.ts                  # POST /login, GET /me
+│   │   │   ├── projects.ts              # Projects CRUD
+│   │   │   ├── sites.ts                 # Sites CRUD
+│   │   │   ├── runs.ts                  # Test runs management
+│   │   │   └── issues.ts                # Issues + comments
+│   │   │
+│   │   ├── 📁 services/                 # Core Business Logic
+│   │   │   ├── testRunner.ts            # Main test orchestrator
+│   │   │   ├── pageCrawler.ts           # URL discovery (sitemap + crawl)
+│   │   │   ├── visualAnalyzer.ts        # Layout issue detection
+│   │   │   ├── formTester.ts            # Form automation & testing
+│   │   │   └── issueCreator.ts          # Auto-create issues
+│   │   │
+│   │   ├── 📁 types/
+│   │   │   └── index.ts                 # TypeScript interfaces
+│   │   │
+│   │   ├── 📁 utils/
+│   │   │   └── logger.ts                # Winston logger
+│   │   │
+│   │   └── index.ts                     # Express app entry point
+│   │
+│   ├── 📁 uploads/                      # Generated at runtime
+│   │   └── 📁 screenshots/              # Stored screenshots
+│   │
+│   ├── 📁 logs/                         # Generated at runtime
+│   │   ├── error.log
+│   │   └── combined.log
+│   │
+│   ├── package.json                     # Backend dependencies
+│   ├── tsconfig.json                    # TypeScript config
+│   └── .env.example                     # Environment template
+│
+├── 📁 frontend/                         # React SPA
+│   ├── 📁 src/
+│   │   ├── 📁 components/
+│   │   │   ├── Layout.tsx               # Header, nav, footer
+│   │   │   └── ProtectedRoute.tsx       # Auth guard wrapper
+│   │   │
+│   │   ├── 📁 contexts/
+│   │   │   └── AuthContext.tsx          # Global auth state
+│   │   │
+│   │   ├── 📁 pages/
+│   │   │   ├── LoginPage.tsx            # Login form
+│   │   │   ├── ProjectsPage.tsx         # Projects list + create
+│   │   │   ├── ProjectDetailPage.tsx    # Sites list + create
+│   │   │   ├── SiteDetailPage.tsx       # Runs + run test
+│   │   │   └── IssuesPage.tsx           # Issues list + filters
+│   │   │
+│   │   ├── 📁 services/                 # API Client Layer
+│   │   │   ├── api.ts                   # Axios instance + interceptors
+│   │   │   ├── authService.ts           # Login, logout, get user
+│   │   │   ├── projectService.ts        # Projects API calls
+│   │   │   ├── siteService.ts           # Sites API calls
+│   │   │   ├── runService.ts            # Runs API calls
+│   │   │   └── issueService.ts          # Issues API calls
+│   │   │
+│   │   ├── 📁 types/
+│   │   │   └── index.ts                 # TypeScript interfaces
+│   │   │
+│   │   ├── App.tsx                      # Main app + router
+│   │   ├── main.tsx                     # React entry point
+│   │   ├── index.css                    # Global styles (Tailwind)
+│   │   └── vite-env.d.ts                # Vite types
+│   │
+│   ├── index.html                       # HTML template
+│   ├── package.json                     # Frontend dependencies
+│   ├── tsconfig.json                    # TypeScript config
+│   ├── vite.config.ts                   # Vite config (dev server, proxy)
+│   ├── tailwind.config.js               # TailwindCSS config
+│   └── postcss.config.js                # PostCSS config
+│
+├── 📁 database/
+│   └── schema.sql                       # PostgreSQL schema (13 tables)
+│                                        # - users, projects, sites, runs
+│                                        # - pages, visual_anomalies, form_tests
+│                                        # - issues, issue_comments, etc.
+│
+├── 📄 README.md                         # Main project documentation
+├── 📄 SETUP.md                          # Detailed setup instructions
+├── 📄 DEVELOPMENT.md                    # Developer guide & architecture
+├── 📄 COMPLETION.md                     # Requirements checklist
+├── 📄 QUICKSTART.md                     # Quick reference card
+│
+├── 🔧 setup.ps1                         # Automated setup script
+├── 🔧 start.ps1                         # Quick start both servers
+│
+└── .gitignore                           # Git ignore rules
+
+
+═══════════════════════════════════════════════════════════════════
+                          DATA FLOW DIAGRAM
+═══════════════════════════════════════════════════════════════════
+
+┌─────────────┐
+│   Browser   │ (React SPA on port 5173)
+└──────┬──────┘
+       │
+       │ HTTP/JSON
+       ↓
+┌──────────────────────────────────────────────────────────────────┐
+│                     Express API (port 3000)                      │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐          │
+│  │ Auth Routes  │  │Project Routes│  │  Run Routes  │  ...     │
+│  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘          │
+│         │                  │                  │                   │
+│         └──────────────────┼──────────────────┘                   │
+│                            ↓                                      │
+│  ┌────────────────────────────────────────────────────────────┐ │
+│  │                  Business Logic Services                    │ │
+│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐     │ │
+│  │  │ TestRunner   │→ │ PageCrawler  │→ │VisualAnalyzer│     │ │
+│  │  └──────────────┘  └──────────────┘  └──────────────┘     │ │
+│  │  ┌──────────────┐  ┌──────────────┐                       │ │
+│  │  │ FormTester   │→ │IssueCreator  │                       │ │
+│  │  └──────────────┘  └──────────────┘                       │ │
+│  └────────────────────────────────────────────────────────────┘ │
+└───────────────────────────┬──────────────────────────────────────┘
+                            │
+                            ↓
+                 ┌──────────────────────┐
+                 │   PostgreSQL DB      │
+                 │  (13 tables)         │
+                 └──────────────────────┘
+
+        ┌─────────────────────────────┐
+        │   Playwright Browser        │
+        │  (Chromium - Headless)      │
+        │  • Navigate pages           │
+        │  • Capture screenshots      │
+        │  • Test forms               │
+        └─────────────────────────────┘
+
+
+═══════════════════════════════════════════════════════════════════
+                    TEST RUN EXECUTION FLOW
+═══════════════════════════════════════════════════════════════════
+
+User clicks "Run Test"
+         ↓
+POST /api/runs (site_id)
+         ↓
+Create run record (status: Pending)
+         ↓
+TestRunner.executeRun() starts (async)
+         ↓
+Update status → Running
+         ↓
+Launch Playwright browser (1440×900)
+         ↓
+╔════════════════════════════════════════════════════════════════╗
+║                    PAGE CRAWLER                                 ║
+║  1. Fetch sitemap.xml (if exists)                              ║
+║  2. Parse sitemap URLs                                         ║
+║  3. Crawl from base URL                                        ║
+║  4. Extract <a href> links                                     ║
+║  5. Filter: same domain, exclude patterns                      ║
+║  6. Limit: max 30 pages, depth 2                               ║
+╚════════════════════════════════════════════════════════════════╝
+         ↓
+For each discovered URL (max 30):
+         ↓
+    ┌────────────────────────────────────────────────┐
+    │  1. Navigate to URL                             │
+    │  2. Wait for networkidle + 2s                   │
+    │  3. Capture full-page screenshot → PNG          │
+    │  4. Get DOM snapshot → HTML string              │
+    │  5. Save to pages table                         │
+    └────────────────────────────────────────────────┘
+         ↓
+    ┌────────────────────────────────────────────────┐
+    │  VISUAL ANALYZER                                │
+    │  • Check horizontal scroll                      │
+    │  • Detect overlapping elements                  │
+    │  • Find viewport overflow                       │
+    │  → Save to visual_anomalies                     │
+    └────────────────────────────────────────────────┘
+         ↓
+    ┌────────────────────────────────────────────────┐
+    │  FORM TESTER                                    │
+    │  • Find all <form> tags                         │
+    │  • Skip login forms                             │
+    │  • Auto-fill with test data                     │
+    │  • Submit and monitor response                  │
+    │  • Check success/error indicators               │
+    │  → Save to form_tests                           │
+    └────────────────────────────────────────────────┘
+         ↓
+    ┌────────────────────────────────────────────────┐
+    │  ISSUE CREATOR                                  │
+    │  • Create Visual issue (if anomalies exist)     │
+    │  • Create Form issue (if test failed)           │
+    │  → Save to issues table                         │
+    └────────────────────────────────────────────────┘
+         ↓
+Close browser
+         ↓
+Update run status → Completed
+Update pages_processed, issues_created
+         ↓
+Frontend shows results (auto-refresh)
+
+
+═══════════════════════════════════════════════════════════════════
+                        DATABASE SCHEMA
+═══════════════════════════════════════════════════════════════════
+
+users                              projects
+├─ id (PK)                        ├─ id (PK)
+├─ email                          ├─ name
+├─ password_hash                  ├─ client_name
+├─ role (qa|qa_lead|dev)         ├─ created_by (FK → users)
+├─ first_name                     └─ timestamps
+├─ last_name
+└─ timestamps                      sites
+                                  ├─ id (PK)
+runs                              ├─ project_id (FK → projects)
+├─ id (PK)                        ├─ name
+├─ site_id (FK → sites)          ├─ base_url
+├─ triggered_by (FK → users)     ├─ environment
+├─ status                         └─ timestamps
+├─ pages_processed
+├─ issues_created                 pages
+└─ timestamps                     ├─ id (PK)
+                                  ├─ run_id (FK → runs)
+visual_anomalies                  ├─ url
+├─ id (PK)                        ├─ status_code
+├─ page_id (FK → pages)          ├─ screenshot_url
+├─ anomaly_type                   ├─ dom_snapshot
+├─ category                       └─ render_failed
+├─ message
+└─ severity                       form_tests
+                                  ├─ id (PK)
+issues                            ├─ page_id (FK → pages)
+├─ id (PK)                        ├─ form_selector
+├─ project_id (FK)                ├─ form_fields (JSONB)
+├─ site_id (FK)                   ├─ test_result
+├─ run_id (FK)                    └─ error_message
+├─ page_id (FK)
+├─ url                            issue_comments
+├─ type (Visual|Form)             ├─ id (PK)
+├─ title                          ├─ issue_id (FK → issues)
+├─ description                    ├─ user_id (FK → users)
+├─ screenshot_url                 ├─ comment
+├─ severity                       └─ created_at
+├─ status
+├─ assigned_to (FK → users)      issue_status_history
+└─ timestamps                     ├─ id (PK)
+                                  ├─ issue_id (FK → issues)
+                                  ├─ user_id (FK → users)
+                                  ├─ from_status
+                                  ├─ to_status
+                                  └─ created_at
+
+
+═══════════════════════════════════════════════════════════════════
+                          TECH STACK
+═══════════════════════════════════════════════════════════════════
+
+Backend:
+  • Node.js 18+
+  • TypeScript 5.3
+  • Express 4.18
+  • PostgreSQL 14+ (pg driver)
+  • Playwright 1.40 (Chromium)
+  • bcrypt (password hashing)
+  • jsonwebtoken (JWT auth)
+  • winston (logging)
+  • cheerio (HTML parsing)
+  • axios (HTTP client)
+  • xml2js (sitemap parsing)
+
+Frontend:
+  • React 18
+  • TypeScript 5.2
+  • Vite 5.0
+  • React Router 6.20
+  • TailwindCSS 3.3
+  • Axios 1.6
+  • date-fns 3.0
+
+Development:
+  • tsx (TS dev runner)
+  • ESLint
+  • PostCSS
+  • Autoprefixer
+
+
+═══════════════════════════════════════════════════════════════════
+                    FILE COUNT SUMMARY
+═══════════════════════════════════════════════════════════════════
+
+Backend:          18 TypeScript files
+Frontend:         15 TypeScript/React files  
+Database:         1 SQL schema
+Documentation:    6 markdown files
+Scripts:          2 PowerShell files
+Config:           8 config files
+─────────────────────────────────────────
+Total:            50+ files created
