@@ -26,6 +26,7 @@ interface IssueCreationParams {
   mobileIssues?: MobileIssue[];
   jsErrors?: JSError[];
   visualDiffs?: VisualComparisonResult[];
+  viewportScreenshots?: Record<string, string>;
 }
 
 export class IssueCreator {
@@ -318,7 +319,7 @@ export class IssueCreator {
   }
 
   private async createMobileIssue(params: IssueCreationParams): Promise<void> {
-    const { projectId, siteId, runId, pageId, url, screenshotUrl, mobileIssues } = params;
+    const { projectId, siteId, runId, pageId, url, screenshotUrl, mobileIssues, viewportScreenshots } = params;
 
     const description = mobileIssues!
       .map((issue) => `[${issue.severity}] ${issue.type}\n${issue.description}\n${issue.viewport ? `Viewport: ${issue.viewport}\n` : ''}Recommendation: ${issue.recommendation}`)
@@ -328,7 +329,7 @@ export class IssueCreator {
 
     const severity = this.getHighestSeverity(mobileIssues!.map((i) => i.severity));
 
-    // Prepare metadata with element positions
+    // Prepare metadata with element positions and viewport screenshots
     const metadata = {
       issues: mobileIssues!.map(issue => ({
         type: issue.type,
@@ -336,7 +337,8 @@ export class IssueCreator {
         description: issue.description,
         viewport: issue.viewport,
         elements: issue.elements || []
-      }))
+      })),
+      viewportScreenshots: viewportScreenshots || {}
     };
 
     await Issue.create({
@@ -349,7 +351,7 @@ export class IssueCreator {
       title,
       description,
       screenshot_url: screenshotUrl,
-      metadata, // Store element positions and issue details
+      metadata, // Store element positions, viewport screenshots
       severity,
       status: 'New'
     });

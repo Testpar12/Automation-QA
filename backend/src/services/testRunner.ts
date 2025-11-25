@@ -149,7 +149,14 @@ export class TestRunner {
 
       // 9. Test mobile responsiveness
       const mobileTester = new MobileTester();
-      const mobileIssues = await mobileTester.testMobileResponsiveness(page, this.browser!);
+      const mobileTestResult = await mobileTester.testMobileResponsiveness(page, this.browser!, 'screenshots/mobile');
+      const mobileIssues = mobileTestResult.issues;
+      
+      // Store viewport screenshots in metadata
+      const viewportScreenshotsObj: Record<string, string> = {};
+      mobileTestResult.viewportScreenshots.forEach((path, viewport) => {
+        viewportScreenshotsObj[viewport] = path;
+      });
 
       // 10. Detect JavaScript errors
       const jsErrorDetector = new JSErrorDetector();
@@ -183,6 +190,7 @@ export class TestRunner {
         mobileIssues,
         jsErrors,
         visualDiffs,
+        viewportScreenshots: viewportScreenshotsObj,
       });
 
       issuesCreated = createdIssues;

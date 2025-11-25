@@ -74,6 +74,7 @@ export interface Issue {
         selector?: string;
       }>;
     }>;
+    viewportScreenshots?: Record<string, string>; // viewport -> screenshot path
   };
   severity: 'Critical' | 'Major' | 'Minor' | 'Trivial';
   status: 'New' | 'Open (For Dev)' | 'Ready for QA' | 'Resolved' | 'Rejected';

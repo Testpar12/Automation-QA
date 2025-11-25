@@ -29,6 +29,14 @@ const IssueDetailPage: React.FC = () => {
     return Array.from(viewports);
   };
 
+  // Get the current screenshot URL based on selected viewport
+  const getCurrentScreenshot = () => {
+    if (selectedViewport && issue?.metadata?.viewportScreenshots) {
+      return issue.metadata.viewportScreenshots[selectedViewport] || issue.screenshot_url;
+    }
+    return issue?.screenshot_url;
+  };
+
   useEffect(() => {
     if (id) {
       loadIssue();
@@ -270,11 +278,12 @@ const IssueDetailPage: React.FC = () => {
                   <div className="relative inline-block" style={{ maxWidth: '100%' }}>
                     <img
                       ref={imgRef}
-                      src={issue.screenshot_url}
+                      key={getCurrentScreenshot()} // Force re-render on screenshot change
+                      src={getCurrentScreenshot()}
                       alt="Issue screenshot"
                       className="border rounded shadow-sm"
                       style={{ 
-                        maxWidth: '100%',
+                        maxWidth: selectedViewport ? '600px' : '100%',
                         height: 'auto',
                         display: 'block'
                       }}

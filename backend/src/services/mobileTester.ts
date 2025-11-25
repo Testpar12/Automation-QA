@@ -15,11 +15,18 @@ export interface MobileIssue {
   recommendation: string;
   viewport?: string;
   elements?: ElementPosition[];
+  screenshotPath?: string; // Path to viewport-specific screenshot
+}
+
+export interface MobileTestResult {
+  issues: MobileIssue[];
+  viewportScreenshots: Map<string, string>; // viewport -> screenshot path
 }
 
 export class MobileTester {
-  async testMobileResponsiveness(page: Page, browser: Browser): Promise<MobileIssue[]> {
+  async testMobileResponsiveness(page: Page, browser: Browser, screenshotsDir: string = 'screenshots/mobile'): Promise<MobileTestResult> {
     const issues: MobileIssue[] = [];
+    const viewportScreenshots = new Map<string, string>();
 
     const viewports = [
       { name: 'iPhone SE', width: 375, height: 667 },
@@ -40,6 +47,22 @@ export class MobileTester {
 
         try {
           await mobilePage.goto(currentUrl, { waitUntil: 'networkidle', timeout: 30000 });
+
+          // Capture screenshot for this viewport
+          const fs = require('fs');
+          const path = require('path');
+          const viewportKey = `${viewport.width}x${viewport.height}`;
+          const timestamp = Date.now();
+          const screenshotFileName = `mobile-${viewportKey}-${timestamp}.png`;
+          const screenshotPath = path.join(screenshotsDir, screenshotFileName);
+          
+          // Ensure directory exists
+          if (!fs.existsSync(screenshotsDir)) {
+            fs.mkdirSync(screenshotsDir, { recursive: true });
+          }
+          
+          await mobilePage.screenshot({ path: screenshotPath, fullPage: true });
+          viewportScreenshots.set(viewportKey, screenshotPath);
 
           // Check for horizontal scrolling
           const hasHorizontalScroll = await mobilePage.evaluate(() => {
@@ -211,6 +234,6 @@ export class MobileTester {
       console.error('Error testing mobile responsiveness:', error);
     }
 
-    return issues;
+    return { issues, viewportScreenshots };
   }
 }
