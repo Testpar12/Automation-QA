@@ -1,11 +1,20 @@
 import { Page, Browser } from 'playwright';
 
+export interface ElementPosition {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  selector?: string;
+}
+
 export interface MobileIssue {
   type: string;
   severity: 'Critical' | 'Major' | 'Minor';
   description: string;
   recommendation: string;
   viewport?: string;
+  elements?: ElementPosition[];
 }
 
 export class MobileTester {
@@ -60,26 +69,38 @@ export class MobileTester {
           }
 
           // Check for too-small touch targets
-          const smallTouchTargets = await mobilePage.evaluate(() => {
+          const smallTouchTargetsData = await mobilePage.evaluate(() => {
             const buttons = Array.from(document.querySelectorAll('button, a, input[type="button"], input[type="submit"]'));
             let count = 0;
+            const elements: Array<{x: number, y: number, width: number, height: number, selector: string}> = [];
             
-            buttons.forEach(btn => {
+            buttons.forEach((btn, index) => {
               const rect = btn.getBoundingClientRect();
               if (rect.width < 44 || rect.height < 44) {
                 count++;
+                const tagName = btn.tagName.toLowerCase();
+                const id = btn.id ? `#${btn.id}` : '';
+                const className = btn.className ? `.${btn.className.split(' ')[0]}` : '';
+                elements.push({
+                  x: rect.left,
+                  y: rect.top,
+                  width: rect.width,
+                  height: rect.height,
+                  selector: `${tagName}${id}${className}`
+                });
               }
             });
             
-            return count;
+            return { count, elements };
           });
 
-          if (smallTouchTargets > 0 && viewport === viewports[0]) { // Only report once
+          if (smallTouchTargetsData.count > 0 && viewport === viewports[0]) { // Only report once
             issues.push({
               type: 'Small Touch Targets',
               severity: 'Major',
-              description: `${smallTouchTargets} interactive element(s) smaller than recommended touch target size`,
+              description: `${smallTouchTargetsData.count} interactive element(s) smaller than recommended touch target size`,
               recommendation: 'Ensure buttons and links are at least 44x44 pixels for easy tapping',
+              elements: smallTouchTargetsData.elements
             });
           }
 
@@ -111,9 +132,10 @@ export class MobileTester {
           }
 
           // Check for overlapping elements
-          const overlappingElements = await mobilePage.evaluate(() => {
+          const overlappingData = await mobilePage.evaluate(() => {
             const elements = Array.from(document.querySelectorAll('button, a, input'));
             let count = 0;
+            const overlappingPairs: Array<{x: number, y: number, width: number, height: number, selector: string}> = [];
             
             for (let i = 0; i < elements.length; i++) {
               const rect1 = elements[i].getBoundingClientRect();
@@ -125,22 +147,34 @@ export class MobileTester {
                       rect1.left > rect2.right || 
                       rect1.bottom < rect2.top || 
                       rect1.top > rect2.bottom)) {
+                  const tagName = elements[i].tagName.toLowerCase();
+                  const id = elements[i].id ? `#${elements[i].id}` : '';
+                  const className = elements[i].className ? `.${elements[i].className.toString().split(' ')[0]}` : '';
+                  
+                  overlappingPairs.push({
+                    x: rect1.left,
+                    y: rect1.top,
+                    width: rect1.width,
+                    height: rect1.height,
+                    selector: `${tagName}${id}${className}`
+                  });
                   count++;
                   break;
                 }
               }
             }
             
-            return count;
+            return { count, elements: overlappingPairs };
           });
 
-          if (overlappingElements > 0) {
+          if (overlappingData.count > 0) {
             issues.push({
               type: 'Overlapping Interactive Elements',
               severity: 'Major',
               description: `Interactive elements are overlapping on ${viewport.name}`,
               viewport: `${viewport.width}x${viewport.height}`,
               recommendation: 'Ensure interactive elements have proper spacing and do not overlap',
+              elements: overlappingData.elements
             });
           }
 

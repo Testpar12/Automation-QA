@@ -17,7 +17,7 @@ const SiteDetailPage: React.FC = () => {
   const canRunTest = user?.role === 'qa' || user?.role === 'qa_lead';
 
   useEffect(() => {
-    if (id && id !== 'undefined') {
+    if (id && id !== 'undefined' && id !== '[object Object]' && typeof id === 'string') {
       loadData();
       const interval = setInterval(loadData, 5000); // Refresh every 5 seconds
       return () => clearInterval(interval);
@@ -27,7 +27,7 @@ const SiteDetailPage: React.FC = () => {
   }, [id]);
 
   const loadData = async () => {
-    if (!id || id === 'undefined') return;
+    if (!id || id === 'undefined' || id === '[object Object]' || typeof id !== 'string') return;
 
     try {
       const [siteData, runsData] = await Promise.all([
@@ -44,7 +44,7 @@ const SiteDetailPage: React.FC = () => {
   };
 
   const handleRunTest = async () => {
-    if (!id || id === 'undefined') return;
+    if (!id || id === 'undefined' || id === '[object Object]' || typeof id !== 'string') return;
 
     setRunningTest(true);
     try {

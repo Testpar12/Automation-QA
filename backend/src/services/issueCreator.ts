@@ -328,6 +328,17 @@ export class IssueCreator {
 
     const severity = this.getHighestSeverity(mobileIssues!.map((i) => i.severity));
 
+    // Prepare metadata with element positions
+    const metadata = {
+      issues: mobileIssues!.map(issue => ({
+        type: issue.type,
+        severity: issue.severity,
+        description: issue.description,
+        viewport: issue.viewport,
+        elements: issue.elements || []
+      }))
+    };
+
     await Issue.create({
       project_id: projectId,
       site_id: siteId,
@@ -338,6 +349,7 @@ export class IssueCreator {
       title,
       description,
       screenshot_url: screenshotUrl,
+      metadata, // Store element positions and issue details
       severity,
       status: 'New'
     });

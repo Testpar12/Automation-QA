@@ -123,6 +123,7 @@ export interface IIssue extends Document {
   description: string;
   url?: string;
   screenshot_url?: string;
+  metadata?: any; // Store element positions and other issue-specific data
   status: 'New' | 'Open (For Dev)' | 'Ready for QA' | 'Resolved' | 'Rejected';
   assigned_to?: mongoose.Types.ObjectId;
   created_by?: mongoose.Types.ObjectId;
@@ -141,6 +142,7 @@ const IssueSchema = new Schema<IIssue>({
   description: { type: String, required: true },
   url: { type: String },
   screenshot_url: { type: String },
+  metadata: { type: Schema.Types.Mixed }, // Flexible field for storing additional data
   status: { type: String, enum: ['New', 'Open (For Dev)', 'Ready for QA', 'Resolved', 'Rejected'], default: 'New' },
   assigned_to: { type: Schema.Types.ObjectId, ref: 'User' },
   created_by: { type: Schema.Types.ObjectId, ref: 'User' },

@@ -162,7 +162,7 @@ export class TestRunner {
         pageId,
         url,
         screenshotPath,
-        site.id
+        site._id.toString()
       );
 
       // 12. Create issues
@@ -170,8 +170,8 @@ export class TestRunner {
       const createdIssues = await issueCreator.createIssuesForPage({
         runId,
         pageId,
-        siteId: site.id,
-        projectId: site.project_id,
+        siteId: site._id.toString(),
+        projectId: site.project_id.toString(),
         url,
         screenshotUrl: screenshotPath,
         visualAnomalies,

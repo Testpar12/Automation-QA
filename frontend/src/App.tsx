@@ -1,4 +1,4 @@
-import React from 'react';
+
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -8,6 +8,7 @@ import ProjectDetailPage from './pages/ProjectDetailPage';
 import SiteDetailPage from './pages/SiteDetailPage';
 import RunDetailPage from './pages/RunDetailPage';
 import IssuesPage from './pages/IssuesPage';
+import IssueDetailPage from './pages/IssueDetailPage';
 import BaselinesPage from './pages/BaselinesPage';
 
 function App() {
@@ -76,6 +77,15 @@ function App() {
             element={
               <ProtectedRoute>
                 <IssuesPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/issues/:id"
+            element={
+              <ProtectedRoute>
+                <IssueDetailPage />
               </ProtectedRoute>
             }
           />

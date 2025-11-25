@@ -60,6 +60,21 @@ export interface Issue {
   title?: string;
   description?: string;
   screenshot_url?: string;
+  metadata?: {
+    issues?: Array<{
+      type: string;
+      severity: string;
+      description: string;
+      viewport?: string;
+      elements?: Array<{
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+        selector?: string;
+      }>;
+    }>;
+  };
   severity: 'Critical' | 'Major' | 'Minor' | 'Trivial';
   status: 'New' | 'Open (For Dev)' | 'Ready for QA' | 'Resolved' | 'Rejected';
   assigned_to?: string;

@@ -89,7 +89,7 @@ router.get('/:id', authenticate, async (req: AuthRequest, res: Response, next: N
       project_name: project?.name || null,
       created_by_name: createdBy ? `${createdBy.first_name} ${createdBy.last_name}` : null,
       open_issues_count: openIssuesCount,
-      last_run_id: lastRun?._id || null
+      last_run_id: lastRun?._id?.toString() || null
     };
 
     res.json({ site: siteWithData });
