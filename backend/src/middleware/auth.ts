@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { config } from '../config';
-import { query } from '../config/database';
+import { User } from '../models';
 
 export interface AuthRequest extends Request {
   user?: {
@@ -26,19 +26,16 @@ export const authenticate = async (
     const decoded = jwt.verify(token, config.jwt.secret) as any;
     
     // Verify user still exists
-    const result = await query(
-      'SELECT id, email, role FROM users WHERE id = $1',
-      [decoded.userId]
-    );
+    const user = await User.findById(decoded.userId);
 
-    if (result.rows.length === 0) {
+    if (!user) {
       return res.status(401).json({ error: 'User not found' });
     }
 
     req.user = {
-      id: result.rows[0].id,
-      email: result.rows[0].email,
-      role: result.rows[0].role,
+      id: user._id.toString(),
+      email: user.email,
+      role: user.role,
     };
 
     next();

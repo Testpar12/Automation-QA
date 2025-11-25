@@ -101,6 +101,12 @@ const IssuesPage: React.FC = () => {
               <option value="">All</option>
               <option value="Visual">Visual</option>
               <option value="Form">Form</option>
+              <option value="Performance">Performance</option>
+              <option value="Accessibility">Accessibility</option>
+              <option value="SEO">SEO</option>
+              <option value="Broken Link">Broken Link</option>
+              <option value="JavaScript Error">JavaScript Error</option>
+              <option value="Other">Other</option>
             </select>
           </div>
           <div>

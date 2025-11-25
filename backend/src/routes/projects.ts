@@ -1,26 +1,33 @@
 import { Router, Response, NextFunction } from 'express';
 import { body, validationResult } from 'express-validator';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth';
-import { query } from '../config/database';
+import { Project, Site, User } from '../models';
 
 const router = Router();
 
 // Get all projects
 router.get('/', authenticate, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const result = await query(`
-      SELECT 
-        p.*,
-        COUNT(DISTINCT s.id) as site_count,
-        u.first_name || ' ' || u.last_name as created_by_name
-      FROM projects p
-      LEFT JOIN sites s ON s.project_id = p.id
-      LEFT JOIN users u ON u.id = p.created_by
-      GROUP BY p.id, u.first_name, u.last_name
-      ORDER BY p.created_at DESC
-    `);
+    const projects = await Project.find()
+      .populate('created_by', 'first_name last_name')
+      .sort({ created_at: -1 })
+      .lean();
 
-    res.json({ projects: result.rows });
+    // Get site counts for each project
+    const projectsWithCounts = await Promise.all(
+      projects.map(async (project) => {
+        const siteCount = await Site.countDocuments({ project_id: project._id });
+        const createdBy = project.created_by as any;
+        return {
+          ...project,
+          id: project._id.toString(),
+          site_count: siteCount,
+          created_by_name: createdBy ? `${createdBy.first_name} ${createdBy.last_name}` : null
+        };
+      })
+    );
+
+    res.json({ projects: projectsWithCounts });
   } catch (error) {
     next(error);
   }
@@ -29,24 +36,29 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response, next: Next
 // Get single project
 router.get('/:id', authenticate, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const result = await query(
-      `SELECT 
-        p.*,
-        COUNT(DISTINCT s.id) as site_count,
-        u.first_name || ' ' || u.last_name as created_by_name
-      FROM projects p
-      LEFT JOIN sites s ON s.project_id = p.id
-      LEFT JOIN users u ON u.id = p.created_by
-      WHERE p.id = $1
-      GROUP BY p.id, u.first_name, u.last_name`,
-      [req.params.id]
-    );
+    if (!req.params.id || req.params.id === 'undefined' || req.params.id === 'null') {
+      return res.status(400).json({ error: 'Invalid project ID' });
+    }
 
-    if (result.rows.length === 0) {
+    const project = await Project.findById(req.params.id)
+      .populate('created_by', 'first_name last_name')
+      .lean();
+
+    if (!project) {
       return res.status(404).json({ error: 'Project not found' });
     }
 
-    res.json({ project: result.rows[0] });
+    const siteCount = await Site.countDocuments({ project_id: project._id });
+    const createdBy = project.created_by as any;
+
+    const projectWithCounts = {
+      ...project,
+      id: project._id.toString(),
+      site_count: siteCount,
+      created_by_name: createdBy ? `${createdBy.first_name} ${createdBy.last_name}` : null
+    };
+
+    res.json({ project: projectWithCounts });
   } catch (error) {
     next(error);
   }
@@ -70,14 +82,18 @@ router.post(
 
       const { name, client_name } = req.body;
 
-      const result = await query(
-        `INSERT INTO projects (name, client_name, created_by)
-         VALUES ($1, $2, $3)
-         RETURNING *`,
-        [name, client_name || null, req.user!.id]
-      );
+      const project = await Project.create({
+        name,
+        client_name: client_name || null,
+        created_by: req.user!.id
+      });
 
-      res.status(201).json({ project: result.rows[0] });
+      res.status(201).json({ 
+        project: {
+          ...project.toObject(),
+          id: project._id.toString()
+        }
+      });
     } catch (error) {
       next(error);
     }
@@ -101,39 +117,36 @@ router.patch(
       }
 
       const { name, client_name } = req.body;
-      const updates: string[] = [];
-      const values: any[] = [];
-      let paramCount = 1;
+      const updateData: any = {};
 
       if (name !== undefined) {
-        updates.push(`name = $${paramCount++}`);
-        values.push(name);
+        updateData.name = name;
       }
 
       if (client_name !== undefined) {
-        updates.push(`client_name = $${paramCount++}`);
-        values.push(client_name);
+        updateData.client_name = client_name;
       }
 
-      if (updates.length === 0) {
+      if (Object.keys(updateData).length === 0) {
         return res.status(400).json({ error: 'No fields to update' });
       }
 
-      values.push(req.params.id);
-
-      const result = await query(
-        `UPDATE projects 
-         SET ${updates.join(', ')}
-         WHERE id = $${paramCount}
-         RETURNING *`,
-        values
+      const project = await Project.findByIdAndUpdate(
+        req.params.id,
+        updateData,
+        { new: true, runValidators: true }
       );
 
-      if (result.rows.length === 0) {
+      if (!project) {
         return res.status(404).json({ error: 'Project not found' });
       }
 
-      res.json({ project: result.rows[0] });
+      res.json({ 
+        project: {
+          ...project.toObject(),
+          id: project._id.toString()
+        }
+      });
     } catch (error) {
       next(error);
     }
@@ -147,12 +160,9 @@ router.delete(
   authorize('qa_lead'),
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
-      const result = await query(
-        'DELETE FROM projects WHERE id = $1 RETURNING id',
-        [req.params.id]
-      );
+      const project = await Project.findByIdAndDelete(req.params.id);
 
-      if (result.rows.length === 0) {
+      if (!project) {
         return res.status(404).json({ error: 'Project not found' });
       }
 

@@ -2,7 +2,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { body, validationResult } from 'express-validator';
-import { query } from '../config/database';
+import { User } from '../models';
 import { config } from '../config';
 
 const router = Router();
@@ -24,16 +24,11 @@ router.post(
       const { email, password } = req.body;
 
       // Find user
-      const result = await query(
-        'SELECT * FROM users WHERE email = $1',
-        [email]
-      );
+      const user = await User.findOne({ email });
 
-      if (result.rows.length === 0) {
+      if (!user) {
         return res.status(401).json({ error: 'Invalid credentials' });
       }
-
-      const user = result.rows[0];
 
       // Verify password
       const isValid = await bcrypt.compare(password, user.password_hash);
@@ -44,14 +39,14 @@ router.post(
 
       // Generate token
       const token = jwt.sign(
-        { userId: user.id, email: user.email, role: user.role },
+        { userId: user._id.toString(), email: user.email, role: user.role },
         config.jwt.secret
       );
 
       res.json({
         token,
         user: {
-          id: user.id,
+          id: user._id,
           email: user.email,
           role: user.role,
           first_name: user.first_name,
@@ -75,16 +70,20 @@ router.get('/me', async (req, res, next) => {
 
     const decoded = jwt.verify(token, config.jwt.secret) as any;
     
-    const result = await query(
-      'SELECT id, email, role, first_name, last_name FROM users WHERE id = $1',
-      [decoded.userId]
-    );
+    const user = await User.findById(decoded.userId)
+      .select('_id email role first_name last_name')
+      .lean();
 
-    if (result.rows.length === 0) {
+    if (!user) {
       return res.status(401).json({ error: 'User not found' });
     }
 
-    res.json({ user: result.rows[0] });
+    res.json({ 
+      user: {
+        ...user,
+        id: user._id.toString()
+      }
+    });
   } catch (error) {
     next(error);
   }

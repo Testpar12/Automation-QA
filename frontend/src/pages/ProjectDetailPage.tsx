@@ -22,11 +22,15 @@ const ProjectDetailPage: React.FC = () => {
   const canCreateSite = user?.role === 'qa_lead';
 
   useEffect(() => {
-    loadData();
+    if (id && id !== 'undefined') {
+      loadData();
+    } else {
+      setLoading(false);
+    }
   }, [id]);
 
   const loadData = async () => {
-    if (!id) return;
+    if (!id || id === 'undefined') return;
     
     try {
       const [projectData, sitesData] = await Promise.all([
@@ -44,7 +48,7 @@ const ProjectDetailPage: React.FC = () => {
 
   const handleCreateSite = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!id) return;
+    if (!id || id === 'undefined') return;
 
     try {
       await siteService.create({
@@ -70,7 +74,12 @@ const ProjectDetailPage: React.FC = () => {
   if (!project) {
     return (
       <Layout>
-        <div className="text-center py-12">Project not found</div>
+        <div className="text-center py-12">
+          <p className="text-gray-600">Project not found</p>
+          <Link to="/projects" className="text-blue-600 hover:underline mt-4 inline-block">
+            Back to Projects
+          </Link>
+        </div>
       </Layout>
     );
   }

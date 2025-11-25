@@ -1,15 +1,14 @@
-import { Pool } from 'pg';
+import mongoose from 'mongoose';
 import { config } from '../config';
 
-export const pool = new Pool({
-  connectionString: config.database.url,
-});
-
-pool.on('error', (err) => {
-  console.error('Unexpected error on idle client', err);
-  process.exit(-1);
-});
-
-export const query = (text: string, params?: any[]) => {
-  return pool.query(text, params);
+export const connectDatabase = async (): Promise<void> => {
+  try {
+    await mongoose.connect(config.database.uri);
+    console.log('✓ MongoDB connected successfully');
+  } catch (error) {
+    console.error('✗ MongoDB connection error:', error);
+    process.exit(1);
+  }
 };
+
+export default mongoose;

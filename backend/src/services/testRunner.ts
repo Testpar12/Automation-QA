@@ -1,11 +1,18 @@
 import { chromium, Browser, Page } from 'playwright';
-import { query } from '../config/database';
+import { Run, Site, Page as PageModel } from '../models';
 import { config } from '../config';
 import { CRAWL_CONFIG, EXCLUDED_PATTERNS } from '../config/constants';
 import { PageCrawler } from './pageCrawler.js';
 import { VisualAnalyzer } from './visualAnalyzer.js';
 import { FormTester } from './formTester.js';
 import { IssueCreator } from './issueCreator.js';
+import { BrokenLinkDetector } from './brokenLinkDetector.js';
+import { AccessibilityTester } from './accessibilityTester.js';
+import { PerformanceTester } from './performanceTester.js';
+import { SEOTester } from './seoTester.js';
+import { MobileTester } from './mobileTester.js';
+import { JSErrorDetector } from './jsErrorDetector.js';
+import { VisualRegressionTester } from './visualRegressionTester.js';
 import logger from '../utils/logger';
 import path from 'path';
 import fs from 'fs/promises';
@@ -18,10 +25,9 @@ export class TestRunner {
       logger.info(`Starting test run ${runId} for site ${site.name}`);
 
       // Update run status to Running
-      await query(
-        'UPDATE runs SET status = $1 WHERE id = $2',
-        ['Running', runId]
-      );
+      await Run.findByIdAndUpdate(runId, {
+        status: 'Running'
+      });
 
       // Launch browser
       this.browser = await chromium.launch({
@@ -49,24 +55,23 @@ export class TestRunner {
       }
 
       // Update run as completed
-      await query(
-        `UPDATE runs 
-         SET status = $1, completed_at = NOW(), pages_processed = $2, issues_created = $3
-         WHERE id = $4`,
-        ['Completed', pagesProcessed, issuesCreated, runId]
-      );
+      await Run.findByIdAndUpdate(runId, {
+        status: 'Completed',
+        completed_at: new Date(),
+        pages_processed: pagesProcessed,
+        issues_created: issuesCreated
+      });
 
       logger.info(`Completed test run ${runId}: ${pagesProcessed} pages, ${issuesCreated} issues`);
 
     } catch (error: any) {
       logger.error(`Test run ${runId} failed:`, error);
 
-      await query(
-        `UPDATE runs 
-         SET status = $1, completed_at = NOW(), error_message = $2
-         WHERE id = $3`,
-        ['Failed', error.message, runId]
-      );
+      await Run.findByIdAndUpdate(runId, {
+        status: 'Failed',
+        completed_at: new Date(),
+        error_message: error.message
+      });
     } finally {
       if (this.browser) {
         await this.browser.close();
@@ -83,6 +88,7 @@ export class TestRunner {
     });
 
     let issuesCreated = 0;
+    let pageDoc = null;
 
     try {
       // Navigate to page
@@ -107,51 +113,59 @@ export class TestRunner {
       const domSnapshot = await page.content();
 
       // Save page record
-      const pageResult = await query(
-        `INSERT INTO pages (run_id, url, status_code, screenshot_url, dom_snapshot)
-         VALUES ($1, $2, $3, $4, $5)
-         RETURNING id`,
-        [runId, url, statusCode, screenshotPath, domSnapshot]
-      );
+      pageDoc = await PageModel.create({
+        run_id: runId,
+        url,
+        status_code: statusCode,
+        screenshot_url: screenshotPath,
+        dom_snapshot: domSnapshot
+      });
 
-      const pageId = pageResult.rows[0].id;
+      const pageId = pageDoc._id.toString();
 
       // 3. Run visual analysis
       const visualAnalyzer = new VisualAnalyzer();
       const visualAnomalies = await visualAnalyzer.analyze(page, domSnapshot);
 
-      for (const anomaly of visualAnomalies) {
-        await query(
-          `INSERT INTO visual_anomalies (page_id, anomaly_type, category, message, severity)
-           VALUES ($1, $2, $3, $4, $5)`,
-          [pageId, anomaly.type, anomaly.category, anomaly.message, anomaly.severity]
-        );
-      }
-
       // 4. Test forms
       const formTester = new FormTester();
       const formResults = await formTester.testForms(page, url);
 
-      for (const formResult of formResults) {
-        await query(
-          `INSERT INTO form_tests 
-           (page_id, form_selector, form_fields, test_result, submit_status, 
-            success_indicators, error_indicators, error_message)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-          [
-            pageId,
-            formResult.selector,
-            JSON.stringify(formResult.fields),
-            formResult.result,
-            formResult.submitStatus,
-            formResult.successIndicators,
-            formResult.errorIndicators,
-            formResult.errorMessage,
-          ]
-        );
-      }
+      // 5. Detect broken links
+      const brokenLinkDetector = new BrokenLinkDetector();
+      const brokenLinks = await brokenLinkDetector.detectBrokenLinks(page, url);
 
-      // 5. Create issues
+      // 6. Test accessibility
+      const accessibilityTester = new AccessibilityTester();
+      const accessibilityIssues = await accessibilityTester.testAccessibility(page);
+
+      // 7. Measure performance
+      const performanceTester = new PerformanceTester();
+      const performanceResult = await performanceTester.measurePerformance(page);
+
+      // 8. Test SEO
+      const seoTester = new SEOTester();
+      const seoIssues = await seoTester.testSEO(page);
+
+      // 9. Test mobile responsiveness
+      const mobileTester = new MobileTester();
+      const mobileIssues = await mobileTester.testMobileResponsiveness(page, this.browser!);
+
+      // 10. Detect JavaScript errors
+      const jsErrorDetector = new JSErrorDetector();
+      const jsErrors = await jsErrorDetector.detectJSErrors(page);
+
+      // 11. Visual regression testing (compare with baselines)
+      const visualRegressionTester = new VisualRegressionTester();
+      const visualDiffs = await visualRegressionTester.compareScreenshots(
+        runId,
+        pageId,
+        url,
+        screenshotPath,
+        site.id
+      );
+
+      // 12. Create issues
       const issueCreator = new IssueCreator();
       const createdIssues = await issueCreator.createIssuesForPage({
         runId,
@@ -162,6 +176,13 @@ export class TestRunner {
         screenshotUrl: screenshotPath,
         visualAnomalies,
         formResults,
+        brokenLinks,
+        accessibilityIssues,
+        performanceResult,
+        seoIssues,
+        mobileIssues,
+        jsErrors,
+        visualDiffs,
       });
 
       issuesCreated = createdIssues;
@@ -169,12 +190,21 @@ export class TestRunner {
     } catch (error: any) {
       logger.error(`Error processing page ${url}:`, error);
 
-      // Save page as failed
-      await query(
-        `INSERT INTO pages (run_id, url, render_failed, render_error)
-         VALUES ($1, $2, true, $3)`,
-        [runId, url, error.message]
-      );
+      // Only save failed page if we didn't already create a successful one
+      if (!pageDoc) {
+        await PageModel.create({
+          run_id: runId,
+          url,
+          render_failed: true,
+          render_error: error.message
+        });
+      } else {
+        // Update the existing page to mark it as failed
+        await PageModel.findByIdAndUpdate(pageDoc._id, {
+          render_failed: true,
+          render_error: error.message
+        });
+      }
     } finally {
       await page.close();
     }

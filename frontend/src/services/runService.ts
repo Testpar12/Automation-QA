@@ -18,4 +18,9 @@ export const runService = {
     const response = await api.post('/runs', { site_id: siteId });
     return response.data.run;
   },
+
+  async stop(id: string): Promise<Run> {
+    const response = await api.patch(`/runs/${id}/stop`);
+    return response.data.run;
+  },
 };

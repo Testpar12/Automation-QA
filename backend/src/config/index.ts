@@ -7,7 +7,7 @@ export const config = {
   nodeEnv: process.env.NODE_ENV || 'development',
   
   database: {
-    url: process.env.DATABASE_URL || 'postgresql://postgres:password@localhost:5432/qa_automation',
+    uri: process.env.MONGODB_URI || 'mongodb://localhost:27017/qa_automation',
   },
   
   jwt: {

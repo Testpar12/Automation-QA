@@ -6,7 +6,9 @@ import LoginPage from './pages/LoginPage';
 import ProjectsPage from './pages/ProjectsPage';
 import ProjectDetailPage from './pages/ProjectDetailPage';
 import SiteDetailPage from './pages/SiteDetailPage';
+import RunDetailPage from './pages/RunDetailPage';
 import IssuesPage from './pages/IssuesPage';
+import BaselinesPage from './pages/BaselinesPage';
 
 function App() {
   return (
@@ -47,6 +49,24 @@ function App() {
             element={
               <ProtectedRoute>
                 <SiteDetailPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/runs/:id"
+            element={
+              <ProtectedRoute>
+                <RunDetailPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/sites/:siteId/baselines"
+            element={
+              <ProtectedRoute>
+                <BaselinesPage />
               </ProtectedRoute>
             }
           />

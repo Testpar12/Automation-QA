@@ -17,13 +17,17 @@ const SiteDetailPage: React.FC = () => {
   const canRunTest = user?.role === 'qa' || user?.role === 'qa_lead';
 
   useEffect(() => {
-    loadData();
-    const interval = setInterval(loadData, 5000); // Refresh every 5 seconds
-    return () => clearInterval(interval);
+    if (id && id !== 'undefined') {
+      loadData();
+      const interval = setInterval(loadData, 5000); // Refresh every 5 seconds
+      return () => clearInterval(interval);
+    } else {
+      setLoading(false);
+    }
   }, [id]);
 
   const loadData = async () => {
-    if (!id) return;
+    if (!id || id === 'undefined') return;
 
     try {
       const [siteData, runsData] = await Promise.all([
@@ -40,7 +44,7 @@ const SiteDetailPage: React.FC = () => {
   };
 
   const handleRunTest = async () => {
-    if (!id) return;
+    if (!id || id === 'undefined') return;
 
     setRunningTest(true);
     try {
@@ -51,6 +55,20 @@ const SiteDetailPage: React.FC = () => {
       alert('Failed to start test run');
     } finally {
       setRunningTest(false);
+    }
+  };
+
+  const handleStopTest = async (runId: string) => {
+    if (!confirm('Are you sure you want to stop this test run?')) {
+      return;
+    }
+
+    try {
+      await runService.stop(runId);
+      await loadData();
+    } catch (error) {
+      console.error('Failed to stop test run:', error);
+      alert('Failed to stop test run');
     }
   };
 
@@ -75,7 +93,12 @@ const SiteDetailPage: React.FC = () => {
   if (!site) {
     return (
       <Layout>
-        <div className="text-center py-12">Site not found</div>
+        <div className="text-center py-12">
+          <p className="text-gray-600">Site not found</p>
+          <Link to="/projects" className="text-blue-600 hover:underline mt-4 inline-block">
+            Back to Projects
+          </Link>
+        </div>
       </Layout>
     );
   }
@@ -95,15 +118,23 @@ const SiteDetailPage: React.FC = () => {
             <p className="text-gray-600 mb-2">{site.base_url}</p>
             <span className="badge badge-new">{site.environment}</span>
           </div>
-          {canRunTest && (
-            <button
-              onClick={handleRunTest}
-              disabled={runningTest}
-              className="btn btn-primary"
+          <div className="flex gap-3">
+            <Link
+              to={`/sites/${site.id}/baselines`}
+              className="btn btn-secondary"
             >
-              {runningTest ? 'Starting...' : '▶ Run Test'}
-            </button>
-          )}
+              📊 Manage Baselines
+            </Link>
+            {canRunTest && (
+              <button
+                onClick={handleRunTest}
+                disabled={runningTest}
+                className="btn btn-primary"
+              >
+                {runningTest ? 'Starting...' : '▶ Run Test'}
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -173,6 +204,14 @@ const SiteDetailPage: React.FC = () => {
                     >
                       View Issues ({run.issues_created})
                     </Link>
+                  )}
+                  {canRunTest && (run.status === 'Running' || run.status === 'Pending') && (
+                    <button
+                      onClick={() => handleStopTest(run.id)}
+                      className="btn bg-red-600 hover:bg-red-700 text-white text-sm"
+                    >
+                      Stop
+                    </button>
                   )}
                 </div>
               </div>

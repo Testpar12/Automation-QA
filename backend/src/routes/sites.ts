@@ -1,7 +1,7 @@
 import { Router, Response, NextFunction } from 'express';
 import { body, validationResult } from 'express-validator';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth';
-import { query } from '../config/database';
+import { Project, Site, User, Issue, Run } from '../models';
 
 const router = Router();
 
@@ -10,39 +10,45 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response, next: Next
   try {
     const projectId = req.query.project_id;
     
-    let queryText = `
-      SELECT 
-        s.*,
-        p.name as project_name,
-        u.first_name || ' ' || u.last_name as created_by_name,
-        (
-          SELECT COUNT(*) 
-          FROM issues 
-          WHERE site_id = s.id 
-          AND status NOT IN ('Resolved', 'Rejected')
-        ) as open_issues_count,
-        (
-          SELECT MAX(started_at) 
-          FROM runs 
-          WHERE site_id = s.id
-        ) as last_run_at
-      FROM sites s
-      JOIN projects p ON p.id = s.project_id
-      LEFT JOIN users u ON u.id = s.created_by
-    `;
-
-    const values: any[] = [];
-
-    if (projectId) {
-      queryText += ' WHERE s.project_id = $1';
-      values.push(projectId);
+    const filter: any = {};
+    if (projectId && projectId !== 'undefined' && projectId !== 'null') {
+      filter.project_id = projectId;
     }
 
-    queryText += ' ORDER BY s.created_at DESC';
+    const sites = await Site.find(filter)
+      .populate('project_id', 'name')
+      .populate('created_by', 'first_name last_name')
+      .sort({ created_at: -1 })
+      .lean();
 
-    const result = await query(queryText, values);
+    // Get additional data for each site
+    const sitesWithData = await Promise.all(
+      sites.map(async (site) => {
+        const openIssuesCount = await Issue.countDocuments({
+          site_id: site._id,
+          status: { $nin: ['Resolved', 'Rejected'] }
+        });
 
-    res.json({ sites: result.rows });
+        const lastRun = await Run.findOne({ site_id: site._id })
+          .sort({ started_at: -1 })
+          .select('started_at')
+          .lean();
+
+        const project = site.project_id as any;
+        const createdBy = site.created_by as any;
+
+        return {
+          ...site,
+          id: site._id.toString(),
+          project_name: project?.name || null,
+          created_by_name: createdBy ? `${createdBy.first_name} ${createdBy.last_name}` : null,
+          open_issues_count: openIssuesCount,
+          last_run_at: lastRun?.started_at || null
+        };
+      })
+    );
+
+    res.json({ sites: sitesWithData });
   } catch (error) {
     next(error);
   }
@@ -51,36 +57,42 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response, next: Next
 // Get single site
 router.get('/:id', authenticate, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const result = await query(
-      `SELECT 
-        s.*,
-        p.name as project_name,
-        u.first_name || ' ' || u.last_name as created_by_name,
-        (
-          SELECT COUNT(*) 
-          FROM issues 
-          WHERE site_id = s.id 
-          AND status NOT IN ('Resolved', 'Rejected')
-        ) as open_issues_count,
-        (
-          SELECT id
-          FROM runs 
-          WHERE site_id = s.id
-          ORDER BY started_at DESC
-          LIMIT 1
-        ) as last_run_id
-      FROM sites s
-      JOIN projects p ON p.id = s.project_id
-      LEFT JOIN users u ON u.id = s.created_by
-      WHERE s.id = $1`,
-      [req.params.id]
-    );
+    if (!req.params.id || req.params.id === 'undefined' || req.params.id === 'null') {
+      return res.status(400).json({ error: 'Invalid site ID' });
+    }
 
-    if (result.rows.length === 0) {
+    const site = await Site.findById(req.params.id)
+      .populate('project_id', 'name')
+      .populate('created_by', 'first_name last_name')
+      .lean();
+
+    if (!site) {
       return res.status(404).json({ error: 'Site not found' });
     }
 
-    res.json({ site: result.rows[0] });
+    const openIssuesCount = await Issue.countDocuments({
+      site_id: site._id,
+      status: { $nin: ['Resolved', 'Rejected'] }
+    });
+
+    const lastRun = await Run.findOne({ site_id: site._id })
+      .sort({ started_at: -1 })
+      .select('_id')
+      .lean();
+
+    const project = site.project_id as any;
+    const createdBy = site.created_by as any;
+
+    const siteWithData = {
+      ...site,
+      id: site._id.toString(),
+      project_name: project?.name || null,
+      created_by_name: createdBy ? `${createdBy.first_name} ${createdBy.last_name}` : null,
+      open_issues_count: openIssuesCount,
+      last_run_id: lastRun?._id || null
+    };
+
+    res.json({ site: siteWithData });
   } catch (error) {
     next(error);
   }
@@ -92,7 +104,7 @@ router.post(
   authenticate,
   authorize('qa_lead'),
   [
-    body('project_id').isUUID().withMessage('Valid project ID is required'),
+    body('project_id').isMongoId().withMessage('Valid project ID is required'),
     body('name').trim().notEmpty().withMessage('Site name is required'),
     body('base_url').isURL().withMessage('Valid base URL is required'),
     body('environment').isIn(['Staging', 'Production', 'Other']),
@@ -107,23 +119,26 @@ router.post(
       const { project_id, name, base_url, environment } = req.body;
 
       // Verify project exists
-      const projectCheck = await query(
-        'SELECT id FROM projects WHERE id = $1',
-        [project_id]
-      );
+      const project = await Project.findById(project_id);
 
-      if (projectCheck.rows.length === 0) {
+      if (!project) {
         return res.status(404).json({ error: 'Project not found' });
       }
 
-      const result = await query(
-        `INSERT INTO sites (project_id, name, base_url, environment, created_by)
-         VALUES ($1, $2, $3, $4, $5)
-         RETURNING *`,
-        [project_id, name, base_url, environment, req.user!.id]
-      );
+      const site = await Site.create({
+        project_id,
+        name,
+        base_url,
+        environment,
+        created_by: req.user!.id
+      });
 
-      res.status(201).json({ site: result.rows[0] });
+      res.status(201).json({ 
+        site: {
+          ...site.toObject(),
+          id: site._id.toString()
+        }
+      });
     } catch (error) {
       next(error);
     }
@@ -148,44 +163,40 @@ router.patch(
       }
 
       const { name, base_url, environment } = req.body;
-      const updates: string[] = [];
-      const values: any[] = [];
-      let paramCount = 1;
+      const updateData: any = {};
 
       if (name !== undefined) {
-        updates.push(`name = $${paramCount++}`);
-        values.push(name);
+        updateData.name = name;
       }
 
       if (base_url !== undefined) {
-        updates.push(`base_url = $${paramCount++}`);
-        values.push(base_url);
+        updateData.base_url = base_url;
       }
 
       if (environment !== undefined) {
-        updates.push(`environment = $${paramCount++}`);
-        values.push(environment);
+        updateData.environment = environment;
       }
 
-      if (updates.length === 0) {
+      if (Object.keys(updateData).length === 0) {
         return res.status(400).json({ error: 'No fields to update' });
       }
 
-      values.push(req.params.id);
-
-      const result = await query(
-        `UPDATE sites 
-         SET ${updates.join(', ')}
-         WHERE id = $${paramCount}
-         RETURNING *`,
-        values
+      const site = await Site.findByIdAndUpdate(
+        req.params.id,
+        updateData,
+        { new: true, runValidators: true }
       );
 
-      if (result.rows.length === 0) {
+      if (!site) {
         return res.status(404).json({ error: 'Site not found' });
       }
 
-      res.json({ site: result.rows[0] });
+      res.json({ 
+        site: {
+          ...site.toObject(),
+          id: site._id.toString()
+        }
+      });
     } catch (error) {
       next(error);
     }
@@ -199,12 +210,9 @@ router.delete(
   authorize('qa_lead'),
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
-      const result = await query(
-        'DELETE FROM sites WHERE id = $1 RETURNING id',
-        [req.params.id]
-      );
+      const site = await Site.findByIdAndDelete(req.params.id);
 
-      if (result.rows.length === 0) {
+      if (!site) {
         return res.status(404).json({ error: 'Site not found' });
       }
 

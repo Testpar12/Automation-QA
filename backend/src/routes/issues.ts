@@ -1,7 +1,7 @@
 import { Router, Response, NextFunction } from 'express';
 import { body, query as validQuery, validationResult } from 'express-validator';
 import { authenticate, AuthRequest } from '../middleware/auth';
-import { query } from '../config/database';
+import { Issue, IssueComment, IssueStatusHistory, User, Run, Page, Site } from '../models';
 
 const router = Router();
 
@@ -10,59 +10,58 @@ router.get('/', authenticate, async (req: AuthRequest, res, next) => {
   try {
     const { project_id, site_id, run_id, status, type, severity } = req.query;
 
-    let queryText = `
-      SELECT 
-        i.*,
-        p.name as project_name,
-        s.name as site_name,
-        u.first_name || ' ' || u.last_name as created_by_name,
-        a.first_name || ' ' || a.last_name as assigned_to_name
-      FROM issues i
-      JOIN projects p ON p.id = i.project_id
-      JOIN sites s ON s.id = i.site_id
-      LEFT JOIN users u ON u.id = i.created_by
-      LEFT JOIN users a ON a.id = i.assigned_to
-      WHERE 1=1
-    `;
+    const filter: any = {};
 
-    const values: any[] = [];
-    let paramCount = 1;
-
-    if (project_id) {
-      queryText += ` AND i.project_id = $${paramCount++}`;
-      values.push(project_id);
+    if (project_id && project_id !== 'undefined' && project_id !== 'null') {
+      filter.project_id = project_id;
     }
 
-    if (site_id) {
-      queryText += ` AND i.site_id = $${paramCount++}`;
-      values.push(site_id);
+    if (site_id && site_id !== 'undefined' && site_id !== 'null') {
+      filter.site_id = site_id;
     }
 
-    if (run_id) {
-      queryText += ` AND i.run_id = $${paramCount++}`;
-      values.push(run_id);
+    if (run_id && run_id !== 'undefined' && run_id !== 'null') {
+      filter.run_id = run_id;
     }
 
     if (status) {
-      queryText += ` AND i.status = $${paramCount++}`;
-      values.push(status);
+      filter.status = status;
     }
 
     if (type) {
-      queryText += ` AND i.type = $${paramCount++}`;
-      values.push(type);
+      filter.type = type;
     }
 
     if (severity) {
-      queryText += ` AND i.severity = $${paramCount++}`;
-      values.push(severity);
+      filter.severity = severity;
     }
 
-    queryText += ' ORDER BY i.created_at DESC LIMIT 1000';
+    const issues = await Issue.find(filter)
+      .populate('project_id', 'name')
+      .populate('site_id', 'name')
+      .populate('created_by', 'first_name last_name')
+      .populate('assigned_to', 'first_name last_name')
+      .sort({ created_at: -1 })
+      .limit(1000)
+      .lean();
 
-    const result = await query(queryText, values);
+    const issuesWithData = issues.map(issue => {
+      const project = issue.project_id as any;
+      const site = issue.site_id as any;
+      const createdBy = issue.created_by as any;
+      const assignedTo = issue.assigned_to as any;
 
-    res.json({ issues: result.rows });
+      return {
+        ...issue,
+        id: issue._id.toString(),
+        project_name: project?.name || null,
+        site_name: site?.name || null,
+        created_by_name: createdBy ? `${createdBy.first_name} ${createdBy.last_name}` : null,
+        assigned_to_name: assignedTo ? `${assignedTo.first_name} ${assignedTo.last_name}` : null
+      };
+    });
+
+    res.json({ issues: issuesWithData });
   } catch (error) {
     next(error);
   }
@@ -71,55 +70,70 @@ router.get('/', authenticate, async (req: AuthRequest, res, next) => {
 // Get single issue
 router.get('/:id', authenticate, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const issueResult = await query(
-      `SELECT 
-        i.*,
-        p.name as project_name,
-        s.name as site_name,
-        u.first_name || ' ' || u.last_name as created_by_name,
-        a.first_name || ' ' || a.last_name as assigned_to_name
-      FROM issues i
-      JOIN projects p ON p.id = i.project_id
-      JOIN sites s ON s.id = i.site_id
-      LEFT JOIN users u ON u.id = i.created_by
-      LEFT JOIN users a ON a.id = i.assigned_to
-      WHERE i.id = $1`,
-      [req.params.id]
-    );
+    if (!req.params.id || req.params.id === 'undefined' || req.params.id === 'null') {
+      return res.status(400).json({ error: 'Invalid issue ID' });
+    }
 
-    if (issueResult.rows.length === 0) {
+    const issueDoc = await Issue.findById(req.params.id)
+      .populate('project_id', 'name')
+      .populate('site_id', 'name')
+      .populate('created_by', 'first_name last_name')
+      .populate('assigned_to', 'first_name last_name')
+      .lean();
+
+    if (!issueDoc) {
       return res.status(404).json({ error: 'Issue not found' });
     }
 
+    const project = issueDoc.project_id as any;
+    const site = issueDoc.site_id as any;
+    const createdBy = issueDoc.created_by as any;
+    const assignedTo = issueDoc.assigned_to as any;
+
+    const issue = {
+      ...issueDoc,
+      id: issueDoc._id.toString(),
+      project_name: project?.name || null,
+      site_name: site?.name || null,
+      created_by_name: createdBy ? `${createdBy.first_name} ${createdBy.last_name}` : null,
+      assigned_to_name: assignedTo ? `${assignedTo.first_name} ${assignedTo.last_name}` : null
+    };
+
     // Get comments
-    const commentsResult = await query(
-      `SELECT 
-        c.*,
-        u.first_name || ' ' || u.last_name as user_name,
-        u.role as user_role
-      FROM issue_comments c
-      JOIN users u ON u.id = c.user_id
-      WHERE c.issue_id = $1
-      ORDER BY c.created_at ASC`,
-      [req.params.id]
-    );
+    const commentsData = await IssueComment.find({ issue_id: req.params.id })
+      .populate('user_id', 'first_name last_name role')
+      .sort({ created_at: 1 })
+      .lean();
+
+    const comments = commentsData.map(comment => {
+      const user = comment.user_id as any;
+      return {
+        ...comment,
+        id: comment._id.toString(),
+        user_name: user ? `${user.first_name} ${user.last_name}` : null,
+        user_role: user?.role || null
+      };
+    });
 
     // Get status history
-    const historyResult = await query(
-      `SELECT 
-        h.*,
-        u.first_name || ' ' || u.last_name as user_name
-      FROM issue_status_history h
-      JOIN users u ON u.id = h.user_id
-      WHERE h.issue_id = $1
-      ORDER BY h.created_at DESC`,
-      [req.params.id]
-    );
+    const historyData = await IssueStatusHistory.find({ issue_id: req.params.id })
+      .populate('user_id', 'first_name last_name')
+      .sort({ created_at: -1 })
+      .lean();
+
+    const history = historyData.map(h => {
+      const user = h.user_id as any;
+      return {
+        ...h,
+        id: h._id.toString(),
+        user_name: user ? `${user.first_name} ${user.last_name}` : null
+      };
+    });
 
     res.json({
-      issue: issueResult.rows[0],
-      comments: commentsResult.rows,
-      history: historyResult.rows,
+      issue,
+      comments,
+      history,
     });
   } catch (error) {
     next(error);
@@ -135,7 +149,7 @@ router.patch(
     body('description').optional().trim(),
     body('severity').optional().isIn(['Critical', 'Major', 'Minor', 'Trivial']),
     body('status').optional().isIn(['New', 'Open (For Dev)', 'Ready for QA', 'Resolved', 'Rejected']),
-    body('assigned_to').optional().isUUID(),
+    body('assigned_to').optional().isMongoId(),
   ],
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
@@ -144,23 +158,25 @@ router.patch(
         return res.status(400).json({ errors: errors.array() });
       }
 
+      if (!req.params.id || req.params.id === 'undefined' || req.params.id === 'null') {
+        return res.status(400).json({ error: 'Invalid issue ID' });
+      }
+
       const { title, description, severity, status, assigned_to } = req.body;
 
       // Get current issue
-      const currentIssue = await query('SELECT * FROM issues WHERE id = $1', [req.params.id]);
+      const currentIssue = await Issue.findById(req.params.id);
       
-      if (currentIssue.rows.length === 0) {
+      if (!currentIssue) {
         return res.status(404).json({ error: 'Issue not found' });
       }
 
-      const issue = currentIssue.rows[0];
-
       // Check permissions for status changes
-      if (status && status !== issue.status) {
+      if (status && status !== currentIssue.status) {
         if (req.user!.role === 'dev') {
           // Dev can only change from "Open (For Dev)" to "Ready for QA" or "Rejected"
           if (
-            issue.status !== 'Open (For Dev)' ||
+            currentIssue.status !== 'Open (For Dev)' ||
             !['Ready for QA', 'Rejected'].includes(status)
           ) {
             return res.status(403).json({
@@ -170,58 +186,57 @@ router.patch(
         }
 
         // Record status change
-        await query(
-          `INSERT INTO issue_status_history (issue_id, user_id, from_status, to_status)
-           VALUES ($1, $2, $3, $4)`,
-          [req.params.id, req.user!.id, issue.status, status]
-        );
+        await IssueStatusHistory.create({
+          issue_id: req.params.id,
+          user_id: req.user!.id,
+          from_status: currentIssue.status,
+          to_status: status
+        });
       }
 
-      // Build update query
-      const updates: string[] = [];
-      const values: any[] = [];
-      let paramCount = 1;
+      // Build update object
+      const updateData: any = {};
 
       if (title !== undefined) {
-        updates.push(`title = $${paramCount++}`);
-        values.push(title);
+        updateData.title = title;
       }
 
       if (description !== undefined) {
-        updates.push(`description = $${paramCount++}`);
-        values.push(description);
+        updateData.description = description;
       }
 
       if (severity !== undefined && req.user!.role !== 'dev') {
-        updates.push(`severity = $${paramCount++}`);
-        values.push(severity);
+        updateData.severity = severity;
       }
 
       if (status !== undefined) {
-        updates.push(`status = $${paramCount++}`);
-        values.push(status);
+        updateData.status = status;
       }
 
       if (assigned_to !== undefined && req.user!.role !== 'dev') {
-        updates.push(`assigned_to = $${paramCount++}`);
-        values.push(assigned_to);
+        updateData.assigned_to = assigned_to;
       }
 
-      if (updates.length === 0) {
+      if (Object.keys(updateData).length === 0) {
         return res.status(400).json({ error: 'No fields to update' });
       }
 
-      values.push(req.params.id);
-
-      const result = await query(
-        `UPDATE issues 
-         SET ${updates.join(', ')}
-         WHERE id = $${paramCount}
-         RETURNING *`,
-        values
+      const issue = await Issue.findByIdAndUpdate(
+        req.params.id,
+        updateData,
+        { new: true, runValidators: true }
       );
 
-      res.json({ issue: result.rows[0] });
+      if (!issue) {
+        return res.status(404).json({ error: 'Issue not found' });
+      }
+
+      res.json({ 
+        issue: {
+          ...issue.toObject(),
+          id: issue._id.toString()
+        }
+      });
     } catch (error) {
       next(error);
     }
@@ -240,23 +255,31 @@ router.post(
         return res.status(400).json({ errors: errors.array() });
       }
 
+      if (!req.params.id || req.params.id === 'undefined' || req.params.id === 'null') {
+        return res.status(400).json({ error: 'Invalid issue ID' });
+      }
+
       const { comment } = req.body;
 
       // Check issue exists
-      const issueCheck = await query('SELECT id FROM issues WHERE id = $1', [req.params.id]);
+      const issueExists = await Issue.findById(req.params.id);
       
-      if (issueCheck.rows.length === 0) {
+      if (!issueExists) {
         return res.status(404).json({ error: 'Issue not found' });
       }
 
-      const result = await query(
-        `INSERT INTO issue_comments (issue_id, user_id, comment)
-         VALUES ($1, $2, $3)
-         RETURNING *`,
-        [req.params.id, req.user!.id, comment]
-      );
+      const newComment = await IssueComment.create({
+        issue_id: req.params.id,
+        user_id: req.user!.id,
+        comment
+      });
 
-      res.status(201).json({ comment: result.rows[0] });
+      res.status(201).json({ 
+        comment: {
+          ...newComment.toObject(),
+          id: newComment._id.toString()
+        }
+      });
     } catch (error) {
       next(error);
     }
