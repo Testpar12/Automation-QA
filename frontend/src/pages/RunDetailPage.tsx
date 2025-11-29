@@ -4,6 +4,7 @@ import { runService } from '../services/runService';
 import { baselineService, VisualDiff } from '../services/baselineService';
 import { useAuth } from '../contexts/AuthContext';
 import Layout from '../components/Layout';
+import { config } from '../config';
 
 interface RunDetail {
   id: string;
@@ -238,7 +239,7 @@ const RunDetailPage: React.FC = () => {
                   {diff.diff_screenshot_path && !diff.passed && (
                     <div className="mt-2">
                       <a
-                        href={`http://localhost:3000${diff.diff_screenshot_path.replace(/\\/g, '/').replace(/^.*uploads/, '/uploads')}`}
+                        href={`${config.apiBaseUrl}${diff.diff_screenshot_path.replace(/\\/g, '/').replace(/^.*uploads/, '/uploads')}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-blue-600 hover:underline text-sm"
@@ -274,12 +275,12 @@ const RunDetailPage: React.FC = () => {
                 <tbody>
                   {pages.map((page) => (
                     <tr key={page.id} className="border-b hover:bg-gray-50">
-                      <td className="py-2 px-3">
+                      <td className="py-2 px-3 max-w-md">
                         <a
                           href={page.url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="text-blue-600 hover:underline text-sm"
+                          className="text-blue-600 hover:underline text-sm break-all"
                         >
                           {page.url}
                         </a>

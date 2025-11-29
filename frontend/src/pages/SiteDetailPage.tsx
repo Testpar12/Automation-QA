@@ -12,6 +12,8 @@ const SiteDetailPage: React.FC = () => {
   const [runs, setRuns] = useState<Run[]>([]);
   const [loading, setLoading] = useState(true);
   const [runningTest, setRunningTest] = useState(false);
+  const [showCustomTest, setShowCustomTest] = useState(false);
+  const [customPages, setCustomPages] = useState('');
   const { user } = useAuth();
 
   const canRunTest = user?.role === 'qa' || user?.role === 'qa_lead';
@@ -53,6 +55,24 @@ const SiteDetailPage: React.FC = () => {
     } catch (error) {
       console.error('Failed to start test run:', error);
       alert('Failed to start test run');
+    } finally {
+      setRunningTest(false);
+    }
+  };
+
+  const handleRunCustomTest = async () => {
+    if (!id || !customPages.trim()) return;
+
+    setRunningTest(true);
+    try {
+      const pages = customPages.split('\n').map(page => page.trim()).filter(page => page);
+      await runService.createCustom(id, pages);
+      setShowCustomTest(false);
+      setCustomPages('');
+      await loadData();
+    } catch (error) {
+      console.error('Failed to start custom test run:', error);
+      alert('Failed to start custom test run');
     } finally {
       setRunningTest(false);
     }
@@ -126,13 +146,22 @@ const SiteDetailPage: React.FC = () => {
               📊 Manage Baselines
             </Link>
             {canRunTest && (
-              <button
-                onClick={handleRunTest}
-                disabled={runningTest}
-                className="btn btn-primary"
-              >
-                {runningTest ? 'Starting...' : '▶ Run Test'}
-              </button>
+              <>
+                <button
+                  onClick={() => setShowCustomTest(true)}
+                  disabled={runningTest}
+                  className="btn btn-secondary"
+                >
+                  📋 Test Specific Pages
+                </button>
+                <button
+                  onClick={handleRunTest}
+                  disabled={runningTest}
+                  className="btn btn-primary"
+                >
+                  {runningTest ? 'Starting...' : '▶ Run Full Test'}
+                </button>
+              </>
             )}
           </div>
         </div>
@@ -217,6 +246,53 @@ const SiteDetailPage: React.FC = () => {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Custom Pages Test Modal */}
+      {showCustomTest && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto">
+            <h2 className="text-2xl font-bold mb-4">Test Specific Pages</h2>
+            <p className="text-gray-600 mb-4">
+              Enter the URLs you want to test (one per line). You can use relative paths or full URLs.
+            </p>
+            
+            <div className="mb-4">
+              <label className="label">Pages to Test</label>
+              <textarea
+                value={customPages}
+                onChange={(e) => setCustomPages(e.target.value)}
+                className="input h-40 resize-none font-mono text-sm"
+                placeholder={`Examples:
+/
+/about
+/contact
+/products/new-item
+${site?.base_url}/specific-page
+https://example.com/full-url`}
+              />
+              <div className="text-xs text-gray-500 mt-1">
+                {customPages.split('\n').filter(p => p.trim()).length} page(s) to test
+              </div>
+            </div>
+
+            <div className="flex space-x-3">
+              <button
+                onClick={handleRunCustomTest}
+                disabled={runningTest || !customPages.trim()}
+                className="btn btn-primary flex-1"
+              >
+                {runningTest ? 'Starting Test...' : 'Start Custom Test'}
+              </button>
+              <button
+                onClick={() => setShowCustomTest(false)}
+                className="btn btn-secondary flex-1"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </Layout>

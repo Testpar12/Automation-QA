@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import { issueService } from '../services/issueService';
 import { Issue, IssueComment, IssueStatusHistory } from '../types';
 import Layout from '../components/Layout';
+import { config } from '../config';
 
 const IssueDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -15,6 +16,7 @@ const IssueDetailPage: React.FC = () => {
   const [editedIssue, setEditedIssue] = useState<Partial<Issue>>({});
   const [showAnnotations, setShowAnnotations] = useState(true);
   const [selectedViewport, setSelectedViewport] = useState<string | null>(null);
+  const [imageLoaded, setImageLoaded] = useState(false);
   const imgRef = useRef<HTMLImageElement>(null);
 
   // Get unique viewports from metadata
@@ -29,10 +31,27 @@ const IssueDetailPage: React.FC = () => {
     return Array.from(viewports);
   };
 
+  // Auto-select first viewport when issue loads
+  useEffect(() => {
+    if (issue && !selectedViewport) {
+      const viewports = getViewports();
+      if (viewports.length > 0 && issue.metadata?.viewportScreenshots) {
+        setSelectedViewport(viewports[0]);
+      }
+    }
+  }, [issue]);
+
   // Get the current screenshot URL based on selected viewport
   const getCurrentScreenshot = () => {
     if (selectedViewport && issue?.metadata?.viewportScreenshots) {
-      return issue.metadata.viewportScreenshots[selectedViewport] || issue.screenshot_url;
+      const viewportScreenshot = issue.metadata.viewportScreenshots[selectedViewport];
+      if (viewportScreenshot) {
+        // If it starts with /, it's already a URL path
+        if (viewportScreenshot.startsWith('/')) {
+          return `${config.apiBaseUrl}${viewportScreenshot}`;
+        }
+        return viewportScreenshot;
+      }
     }
     return issue?.screenshot_url;
   };
@@ -287,9 +306,11 @@ const IssueDetailPage: React.FC = () => {
                         height: 'auto',
                         display: 'block'
                       }}
+                      onLoad={() => setImageLoaded(!imageLoaded)} // Trigger re-render on image load
                     />
-                    {showAnnotations && issue.metadata?.issues && imgRef.current && (
+                    {showAnnotations && issue.metadata?.issues && imgRef.current && imgRef.current.complete && (
                       <svg
+                        key={`${getCurrentScreenshot()}-${imageLoaded}`} // Force SVG re-render when image changes
                         className="absolute top-0 left-0 pointer-events-none"
                         style={{
                           width: imgRef.current.width,
@@ -298,47 +319,78 @@ const IssueDetailPage: React.FC = () => {
                       >
                         {issue.metadata.issues
                           .filter(metaIssue => !selectedViewport || metaIssue.viewport === selectedViewport)
-                          .map((metaIssue, issueIdx) =>
-                          metaIssue.elements?.slice(0, 10).map((element, elemIdx) => {
-                            const scaleX = imgRef.current!.width / imgRef.current!.naturalWidth;
-                            const scaleY = imgRef.current!.height / imgRef.current!.naturalHeight;
-                            const scaledX = element.x * scaleX;
-                            const scaledY = element.y * scaleY;
-                            const scaledWidth = element.width * scaleX;
-                            const scaledHeight = element.height * scaleY;
+                          .map((metaIssue, issueIdx) => {
+                            // Get short title for the issue type
+                            const getShortTitle = (type: string) => {
+                              switch (type) {
+                                case 'Small Touch Targets': return 'Small Target';
+                                case 'Overlapping Interactive Elements': return 'Overlapping';
+                                case 'Small Text Size': return 'Small Text';
+                                case 'Elements Extending Beyond Viewport': return 'Overflow';
+                                case 'Horizontal Scroll on Mobile': return 'H-Scroll';
+                                case 'Missing Viewport Meta Tag': return 'No Viewport';
+                                default: return type.slice(0, 8); // Truncate to 8 chars
+                              }
+                            };
                             
-                            // Only show if element is visible in viewport
-                            if (scaledX < 0 || scaledY < 0 || scaledX > imgRef.current!.width) {
-                              return null;
-                            }
-                            
-                            return (
-                              <g key={`${issueIdx}-${elemIdx}`}>
-                                <rect
-                                  x={scaledX}
-                                  y={scaledY}
-                                  width={scaledWidth}
-                                  height={scaledHeight}
-                                  fill="rgba(255, 0, 0, 0.15)"
-                                  stroke="#ef4444"
-                                  strokeWidth="2"
-                                  strokeDasharray="4,4"
-                                />
-                                {elemIdx < 5 && ( // Only label first 5 to avoid clutter
-                                  <text
-                                    x={scaledX + 4}
-                                    y={scaledY - 4}
-                                    fill="#dc2626"
-                                    fontSize="11"
-                                    fontWeight="bold"
-                                    style={{ textShadow: '0 0 3px white, 0 0 3px white' }}
-                                  >
-                                    #{elemIdx + 1}
-                                  </text>
-                                )}
-                              </g>
-                            );
-                          })
+                            return metaIssue.elements?.slice(0, 10).map((element, elemIdx) => {
+                              if (!imgRef.current) return null;
+                              
+                              const scaleX = imgRef.current.width / imgRef.current.naturalWidth;
+                              const scaleY = imgRef.current.height / imgRef.current.naturalHeight;
+                              const scaledX = element.x * scaleX;
+                              const scaledY = element.y * scaleY;
+                              const scaledWidth = element.width * scaleX;
+                              const scaledHeight = element.height * scaleY;
+                              
+                              // Only show if element is visible in viewport
+                              if (scaledX < 0 || scaledY < 0 || scaledX > imgRef.current.width || scaledY > imgRef.current.height) {
+                                return null;
+                              }
+                              
+                              const shortTitle = getShortTitle(metaIssue.type);
+                              
+                              return (
+                                <g key={`${issueIdx}-${elemIdx}`}>
+                                  <rect
+                                    x={scaledX}
+                                    y={scaledY}
+                                    width={scaledWidth}
+                                    height={scaledHeight}
+                                    fill="rgba(255, 0, 0, 0.2)"
+                                    stroke="#ef4444"
+                                    strokeWidth="3"
+                                    strokeDasharray="5,5"
+                                  />
+                                  {elemIdx < 5 && ( // Only label first 5 to avoid clutter
+                                    <>
+                                      {/* White background for better text visibility */}
+                                      <rect
+                                        x={scaledX + 2}
+                                        y={scaledY + 2}
+                                        width={shortTitle.length * 7 + 8}
+                                        height={16}
+                                        fill="rgba(255, 255, 255, 0.9)"
+                                        stroke="#dc2626"
+                                        strokeWidth="1"
+                                        rx="2"
+                                      />
+                                      <text
+                                        x={scaledX + 6}
+                                        y={scaledY + 13}
+                                        fill="#dc2626"
+                                        fontSize="10"
+                                        fontWeight="bold"
+                                        fontFamily="Arial, sans-serif"
+                                      >
+                                        {shortTitle}
+                                      </text>
+                                    </>
+                                  )}
+                                </g>
+                              );
+                            });
+                          }
                         )}
                       </svg>
                     )}
@@ -386,13 +438,13 @@ const IssueDetailPage: React.FC = () => {
             {/* Issue Info */}
             <div className="mt-6 pt-6 border-t space-y-2 text-sm">
               <div className="grid grid-cols-2 gap-4">
-                <div>
+                <div className="col-span-2">
                   <span className="text-gray-500">URL:</span>
                   <a
                     href={issue.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-blue-600 hover:underline ml-2"
+                    className="text-blue-600 hover:underline ml-2 break-all"
                   >
                     {issue.url}
                   </a>

@@ -17,6 +17,13 @@ const figmaIntegration = new FigmaIntegration();
 const storage = multer.diskStorage({
   destination: async (req, file, cb) => {
     const uploadDir = path.join(config.upload.screenshotDir, 'manual-baselines');
+    
+    // Ensure directory exists
+    const fs = require('fs');
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    
     cb(null, uploadDir);
   },
   filename: (req, file, cb) => {
@@ -139,7 +146,7 @@ router.post('/baselines/manual',
         baselineType: 'manual',
         viewportWidth: parseInt(viewport_width),
         viewportHeight: parseInt(viewport_height),
-        createdBy: (req as any).user.userId,
+        createdBy: req.user!.id,
       });
 
       res.status(201).json({

@@ -21,6 +21,14 @@ export class TestRunner {
   private browser: Browser | null = null;
 
   async executeRun(runId: string, site: any) {
+    return this.executeTestRun(runId, site);
+  }
+
+  async executeCustomRun(runId: string, site: any, customPages: string[]) {
+    return this.executeTestRun(runId, site, customPages);
+  }
+
+  private async executeTestRun(runId: string, site: any, customPages?: string[]) {
     try {
       logger.info(`Starting test run ${runId} for site ${site.name}`);
 
@@ -34,11 +42,18 @@ export class TestRunner {
         headless: true,
       });
 
-      // 1. Crawl and discover pages
-      const crawler = new PageCrawler(this.browser);
-      const urls = await crawler.discoverPages(site.base_url);
+      // 1. Get pages to test
+      let urls: string[];
       
-      logger.info(`Discovered ${urls.length} pages for run ${runId}`);
+      if (customPages && customPages.length > 0) {
+        urls = customPages;
+        logger.info(`Testing ${urls.length} custom pages for run ${runId}`);
+      } else {
+        // Crawl and discover pages
+        const crawler = new PageCrawler(this.browser);
+        urls = await crawler.discoverPages(site.base_url);
+        logger.info(`Discovered ${urls.length} pages for run ${runId}`);
+      }
 
       // 2. Process each page
       let pagesProcessed = 0;
@@ -91,13 +106,37 @@ export class TestRunner {
     let pageDoc = null;
 
     try {
-      // Navigate to page
-      const response = await page.goto(url, {
-        waitUntil: 'networkidle',
-        timeout: CRAWL_CONFIG.PAGE_TIMEOUT,
-      });
+      logger.info(`Processing page: ${url}`);
+      
+      // Navigate to page with multiple fallback strategies
+      let response;
+      try {
+        // First attempt: Standard navigation with networkidle
+        response = await page.goto(url, {
+          waitUntil: 'networkidle',
+          timeout: CRAWL_CONFIG.PAGE_TIMEOUT,
+        });
+      } catch (timeoutError) {
+        logger.warn(`Network idle timeout for ${url}, trying with domcontentloaded`);
+        try {
+          // Second attempt: Wait for DOM content loaded only
+          response = await page.goto(url, {
+            waitUntil: 'domcontentloaded',
+            timeout: 15000,
+          });
+          // Wait a bit for dynamic content
+          await page.waitForTimeout(3000);
+        } catch (secondError) {
+          logger.warn(`DOM content timeout for ${url}, trying with load event`);
+          // Third attempt: Wait for load event only
+          response = await page.goto(url, {
+            waitUntil: 'load',
+            timeout: 10000,
+          });
+        }
+      }
 
-      // Wait additional time for dynamic content
+      // Wait additional time for dynamic content (reduced from original)
       await page.waitForTimeout(CRAWL_CONFIG.NETWORK_IDLE_TIMEOUT);
 
       const statusCode = response?.status() || 0;
@@ -149,7 +188,7 @@ export class TestRunner {
 
       // 9. Test mobile responsiveness
       const mobileTester = new MobileTester();
-      const mobileTestResult = await mobileTester.testMobileResponsiveness(page, this.browser!, 'screenshots/mobile');
+      const mobileTestResult = await mobileTester.testMobileResponsiveness(page, this.browser!, 'uploads/screenshots/mobile');
       const mobileIssues = mobileTestResult.issues;
       
       // Store viewport screenshots in metadata

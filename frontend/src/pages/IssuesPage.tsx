@@ -20,6 +20,7 @@ const IssuesPage: React.FC = () => {
         type: searchParams.get('type') || undefined,
         site_id: searchParams.get('site_id') || undefined,
         run_id: searchParams.get('run_id') || undefined,
+        project_id: searchParams.get('project_id') || undefined,
       };
       const data = await issueService.getAll(filters);
       setIssues(data);

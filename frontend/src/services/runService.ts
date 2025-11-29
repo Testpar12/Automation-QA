@@ -19,6 +19,14 @@ export const runService = {
     return response.data.run;
   },
 
+  async createCustom(siteId: string, pages: string[]): Promise<Run> {
+    const response = await api.post('/runs/custom', { 
+      site_id: siteId,
+      custom_pages: pages 
+    });
+    return response.data.run;
+  },
+
   async stop(id: string): Promise<Run> {
     const response = await api.patch(`/runs/${id}/stop`);
     return response.data.run;

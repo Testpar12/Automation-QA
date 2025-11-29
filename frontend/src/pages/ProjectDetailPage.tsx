@@ -97,11 +97,19 @@ const ProjectDetailPage: React.FC = () => {
               <p className="text-gray-600">{project.client_name}</p>
             )}
           </div>
-          {canCreateSite && (
-            <button onClick={() => setShowCreateModal(true)} className="btn btn-primary">
-              + New Site
-            </button>
-          )}
+          <div className="flex gap-2">
+            <Link
+              to={`/issues?project_id=${id}`}
+              className="btn btn-secondary"
+            >
+              View Issues
+            </Link>
+            {canCreateSite && (
+              <button onClick={() => setShowCreateModal(true)} className="btn btn-primary">
+                + New Site
+              </button>
+            )}
+          </div>
         </div>
       </div>
 

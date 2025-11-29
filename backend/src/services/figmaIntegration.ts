@@ -51,22 +51,41 @@ export class FigmaIntegration {
   ): Promise<string> {
     const url = `${this.FIGMA_API_BASE}/images/${fileKey}`;
     
-    const response = await axios.get(url, {
-      params: {
-        ids: nodeId,
-        format: 'png',
-        scale: 2, // 2x for retina displays
-      },
-      headers: {
-        'X-Figma-Token': accessToken,
-      },
-    });
+    try {
+      const response = await axios.get(url, {
+        params: {
+          ids: nodeId,
+          format: 'png',
+          scale: 2, // 2x for retina displays
+        },
+        headers: {
+          'X-Figma-Token': accessToken,
+        },
+      });
 
-    if (!response.data.images || !response.data.images[nodeId]) {
-      throw new Error('Failed to get image URL from Figma');
+      logger.info('Figma API response:', JSON.stringify(response.data, null, 2));
+
+      if (!response.data.images || !response.data.images[nodeId]) {
+        logger.error('Figma response missing images:', {
+          hasImages: !!response.data.images,
+          nodeId: nodeId,
+          availableNodes: response.data.images ? Object.keys(response.data.images) : [],
+          fullResponse: response.data
+        });
+        throw new Error('Failed to get image URL from Figma');
+      }
+
+      return response.data.images[nodeId];
+    } catch (error: any) {
+      if (error.response) {
+        logger.error('Figma API error response:', {
+          status: error.response.status,
+          statusText: error.response.statusText,
+          data: error.response.data
+        });
+      }
+      throw error;
     }
-
-    return response.data.images[nodeId];
   }
 
   private async downloadImage(imageUrl: string): Promise<Buffer> {

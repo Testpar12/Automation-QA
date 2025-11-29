@@ -140,7 +140,27 @@ export class VisualRegressionTester {
   }
 
   private async loadImage(imagePath: string): Promise<PNG> {
-    const imageBuffer = await fs.readFile(imagePath);
+    let fullPath = imagePath;
+    
+    // If path is not absolute, make it relative to the project root
+    if (!path.isAbsolute(imagePath)) {
+      fullPath = path.join(__dirname, '../../', imagePath);
+    }
+    
+    // If path doesn't exist, try different common locations
+    const fs = require('fs').promises;
+    if (!await fs.access(fullPath).then(() => true).catch(() => false)) {
+      // Try with uploads prefix if not present
+      if (!imagePath.includes('uploads')) {
+        const withUploads = path.join(__dirname, '../../uploads', imagePath);
+        if (await fs.access(withUploads).then(() => true).catch(() => false)) {
+          fullPath = withUploads;
+        }
+      }
+    }
+    
+    console.log(`Loading image from: ${fullPath}`);
+    const imageBuffer = await fs.readFile(fullPath);
     const png = PNG.sync.read(imageBuffer);
     return png;
   }

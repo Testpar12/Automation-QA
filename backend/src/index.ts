@@ -17,7 +17,36 @@ import baselineRoutes from './routes/baselines';
 const app = express();
 
 // Middleware
-app.use(cors());
+app.use(cors({
+  origin: function(origin, callback) {
+    // Allow requests with no origin (like mobile apps, Postman, etc.)
+    if (!origin) return callback(null, true);
+    
+    // Allow localhost, ngrok, and Cloudflare tunnels
+    const allowedOrigins = [
+      'http://localhost:5173',
+      'http://localhost:3000',
+      /^https:\/\/.*\.ngrok\.io$/,
+      /^https:\/\/.*\.ngrok-free\.app$/,
+      /^https:\/\/.*\.loca\.lt$/,
+      /^https:\/\/.*\.trycloudflare\.com$/
+    ];
+    
+    const isAllowed = allowedOrigins.some(pattern => {
+      if (typeof pattern === 'string') {
+        return origin === pattern;
+      }
+      return pattern.test(origin);
+    });
+    
+    if (isAllowed) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 

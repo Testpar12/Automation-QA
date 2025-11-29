@@ -79,10 +79,25 @@ export class PageCrawler {
       const page = await this.browser.newPage();
 
       try {
-        await page.goto(url, {
-          waitUntil: 'networkidle',
-          timeout: 15000,
-        });
+        // Try multiple wait strategies for crawling as well
+        try {
+          await page.goto(url, {
+            waitUntil: 'networkidle',
+            timeout: 15000,
+          });
+        } catch (timeoutError: any) {
+          logger.warn(`Failed to crawl ${url}: ${timeoutError.message}`);
+          try {
+            await page.goto(url, {
+              waitUntil: 'domcontentloaded',
+              timeout: 8000,
+            });
+          } catch (secondError) {
+            // Skip this page if it can't load
+            await page.close();
+            return;
+          }
+        }
 
         // Extract all links
         const links = await page.$$eval('a[href]', (anchors) =>

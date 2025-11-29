@@ -143,6 +143,75 @@ router.post(
   }
 );
 
+// Start a custom test run with specific pages (qa and qa_lead)
+router.post(
+  '/custom',
+  authenticate,
+  authorize('qa', 'qa_lead'),
+  [
+    body('site_id').isMongoId().withMessage('Valid site ID is required'),
+    body('custom_pages').isArray().withMessage('Custom pages must be an array'),
+    body('custom_pages.*').notEmpty().withMessage('Page URLs cannot be empty'),
+  ],
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const { site_id, custom_pages } = req.body;
+
+      // Verify site exists
+      const site = await Site.findById(site_id).lean();
+
+      if (!site) {
+        return res.status(404).json({ error: 'Site not found' });
+      }
+
+      // Validate and normalize custom pages
+      const normalizedPages = custom_pages.map((page: string) => {
+        const trimmed = page.trim();
+        
+        // If it's a relative path, prepend the base URL
+        if (trimmed.startsWith('/')) {
+          return `${site.base_url.replace(/\/$/, '')}${trimmed}`;
+        }
+        
+        // If it's already a full URL, use as-is
+        if (trimmed.startsWith('http')) {
+          return trimmed;
+        }
+        
+        // Otherwise, assume it's a path and prepend base URL
+        return `${site.base_url.replace(/\/$/, '')}/${trimmed}`;
+      });
+
+      // Create run record
+      const run = await Run.create({
+        site_id,
+        triggered_by: req.user!.id,
+        status: 'Pending'
+      });
+
+      // Start test runner with custom pages
+      const testRunner = new TestRunner();
+      testRunner.executeCustomRun(run._id.toString(), site, normalizedPages).catch(err => {
+        console.error('Custom test run failed:', err);
+      });
+
+      res.status(201).json({ 
+        run: {
+          ...run.toObject(),
+          id: run._id.toString()
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
 // Stop a running test (qa and qa_lead)
 router.patch(
   '/:id/stop',

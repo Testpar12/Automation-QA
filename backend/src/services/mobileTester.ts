@@ -24,7 +24,7 @@ export interface MobileTestResult {
 }
 
 export class MobileTester {
-  async testMobileResponsiveness(page: Page, browser: Browser, screenshotsDir: string = 'screenshots/mobile'): Promise<MobileTestResult> {
+  async testMobileResponsiveness(page: Page, browser: Browser, screenshotsDir: string = 'uploads/screenshots/mobile'): Promise<MobileTestResult> {
     const issues: MobileIssue[] = [];
     const viewportScreenshots = new Map<string, string>();
 
@@ -48,21 +48,54 @@ export class MobileTester {
         try {
           await mobilePage.goto(currentUrl, { waitUntil: 'networkidle', timeout: 30000 });
 
+          // Wait for images to load
+          try {
+            await mobilePage.waitForFunction(
+              () => {
+                const images = Array.from(document.images);
+                return images.every(img => img.complete);
+              },
+              { timeout: 5000 }
+            );
+          } catch (e) {
+            console.log('Some images did not load, continuing...');
+          }
+
+          // Scroll through the page to trigger lazy-loaded images
+          const scrollHeight = await mobilePage.evaluate(() => document.documentElement.scrollHeight);
+          const viewportHeight = await mobilePage.evaluate(() => window.innerHeight);
+          const scrollSteps = Math.ceil(scrollHeight / viewportHeight);
+
+          for (let i = 0; i < scrollSteps; i++) {
+            const scrollPosition = i * viewportHeight;
+            await mobilePage.evaluate((pos) => {
+              window.scrollTo(0, pos);
+            }, scrollPosition);
+            await mobilePage.waitForTimeout(300); // Wait for lazy load
+          }
+
+          // Scroll back to top for screenshots
+          await mobilePage.evaluate(() => window.scrollTo(0, 0));
+          await mobilePage.waitForTimeout(500);
+
           // Capture screenshot for this viewport
           const fs = require('fs');
           const path = require('path');
           const viewportKey = `${viewport.width}x${viewport.height}`;
           const timestamp = Date.now();
           const screenshotFileName = `mobile-${viewportKey}-${timestamp}.png`;
-          const screenshotPath = path.join(screenshotsDir, screenshotFileName);
+          const absolutePath = path.join(screenshotsDir, screenshotFileName);
           
           // Ensure directory exists
           if (!fs.existsSync(screenshotsDir)) {
             fs.mkdirSync(screenshotsDir, { recursive: true });
           }
           
-          await mobilePage.screenshot({ path: screenshotPath, fullPage: true });
-          viewportScreenshots.set(viewportKey, screenshotPath);
+          await mobilePage.screenshot({ path: absolutePath, fullPage: true });
+          
+          // Store relative path for URL access (remove 'uploads/' prefix as it's served directly)
+          const relativePath = `/screenshots/mobile/${screenshotFileName}`;
+          viewportScreenshots.set(viewportKey, relativePath);
 
           // Check for horizontal scrolling
           const hasHorizontalScroll = await mobilePage.evaluate(() => {
@@ -103,10 +136,11 @@ export class MobileTester {
                 count++;
                 const tagName = btn.tagName.toLowerCase();
                 const id = btn.id ? `#${btn.id}` : '';
-                const className = btn.className ? `.${btn.className.split(' ')[0]}` : '';
+                const className = btn.className ? `.${btn.className.toString().split(' ')[0]}` : '';
+                
                 elements.push({
-                  x: rect.left,
-                  y: rect.top,
+                  x: rect.left + window.scrollX,
+                  y: rect.top + window.scrollY,
                   width: rect.width,
                   height: rect.height,
                   selector: `${tagName}${id}${className}`
@@ -163,9 +197,16 @@ export class MobileTester {
             for (let i = 0; i < elements.length; i++) {
               const rect1 = elements[i].getBoundingClientRect();
               
+              // Skip invisible or zero-size elements
+              if (rect1.width === 0 || rect1.height === 0) continue;
+              
               for (let j = i + 1; j < elements.length; j++) {
                 const rect2 = elements[j].getBoundingClientRect();
                 
+                // Skip invisible or zero-size elements
+                if (rect2.width === 0 || rect2.height === 0) continue;
+                
+                // Check if rectangles overlap
                 if (!(rect1.right < rect2.left || 
                       rect1.left > rect2.right || 
                       rect1.bottom < rect2.top || 
@@ -175,8 +216,8 @@ export class MobileTester {
                   const className = elements[i].className ? `.${elements[i].className.toString().split(' ')[0]}` : '';
                   
                   overlappingPairs.push({
-                    x: rect1.left,
-                    y: rect1.top,
+                    x: rect1.left + window.scrollX,
+                    y: rect1.top + window.scrollY,
                     width: rect1.width,
                     height: rect1.height,
                     selector: `${tagName}${id}${className}`
